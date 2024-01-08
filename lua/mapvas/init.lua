@@ -3,6 +3,7 @@ local M = {}
 local function send_mapcat(content)
 	vim.print(content)
 	local cmd = ("echo '$content' | mapcat"):gsub("$content", content)
+	vim.print(cmd)
 	os.execute(cmd)
 end
 
