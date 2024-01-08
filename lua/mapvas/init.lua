@@ -19,4 +19,5 @@ end
 
 M.send = send_mapcat
 M.send_line = send_line
+M.send_buffer = send_buffer
 return M
