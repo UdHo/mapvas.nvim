@@ -12,7 +12,7 @@ local function send_line(line_number)
 		line_number = select(1, unpack(vim.api.nvim_win_get_cursor(0)))
 	end
 	vim.print(line_number)
-	local line_content = vim.api.nvim_buf_get_lines(0, line_number - 1, line_number, false)
+	local line_content = vim.api.nvim_buf_get_lines(0, line_number - 1, line_number, false)[1]
 	send_mapcat(line_content)
 end
 
