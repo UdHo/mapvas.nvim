@@ -1,8 +1,0 @@
-if exists("g:loaded_mapvas")
-    finish
-endif
-let g:loaded_mapvas = 1
-
-command! -nargs=* MVdraw lua require'mapvas'.draw()
-command! -nargs=* MVline lua require'mapvas'.send_line()
-command! -nargs=* MVline lua require'mapvas'.send_buffer()
