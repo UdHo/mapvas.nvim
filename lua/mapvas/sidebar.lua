@@ -27,11 +27,31 @@ end
 
 local function shape_line(shape)
   local check = shape.visible and '[x]' or '[ ]'
-  local typ = string.format('[%s]', shape.shape_type:sub(1, 4))
+  local typ = string.format('[%s]', shape.shape_type)
   local label = shape.label or string.format('#%d', shape.index)
   local label_w = state.width - 2 - 4 - 1 - #typ - 1
   if #label > label_w then label = label:sub(1, label_w - 1) .. '…' end
   return string.format(' %s %s %s', check, typ, label)
+end
+
+-- highlights ------------------------------------------------------------------
+
+local ns = vim.api.nvim_create_namespace('mapvas_sidebar')
+
+local function setup_highlights()
+  vim.api.nvim_set_hl(0, 'MapvasTitle',       { link = 'Title' })
+  vim.api.nvim_set_hl(0, 'MapvasHint',        { link = 'Comment' })
+  vim.api.nvim_set_hl(0, 'MapvasSeparator',   { link = 'NonText' })
+  vim.api.nvim_set_hl(0, 'MapvasCheckOn',     { link = 'DiagnosticOk' })
+  vim.api.nvim_set_hl(0, 'MapvasCheckOff',    { link = 'DiagnosticError' })
+  vim.api.nvim_set_hl(0, 'MapvasLayerId',     { link = 'Identifier' })
+  vim.api.nvim_set_hl(0, 'MapvasLayerIdOff',  { link = 'Comment' })
+  vim.api.nvim_set_hl(0, 'MapvasCount',       { link = 'Number' })
+  vim.api.nvim_set_hl(0, 'MapvasArrow',       { link = 'Special' })
+  vim.api.nvim_set_hl(0, 'MapvasShapeType',   { link = 'Type' })
+  vim.api.nvim_set_hl(0, 'MapvasLabel',       { link = 'Normal' })
+  vim.api.nvim_set_hl(0, 'MapvasLabelOff',    { link = 'Comment' })
+  vim.api.nvim_set_hl(0, 'MapvasEmpty',       { link = 'Comment' })
 end
 
 -- render ----------------------------------------------------------------------
@@ -40,30 +60,77 @@ local function render()
   if not is_open() then return end
   if not vim.api.nvim_buf_is_valid(state.buf) then return end
 
-  local lines
+  local lines = {}
+  local highlights = {}  -- {line, col_start, col_end, group}
+
+  local function add_hl(line, col_start, col_end, group)
+    highlights[#highlights + 1] = { line, col_start, col_end, group }
+  end
+
+  local function push(s) lines[#lines + 1] = s end
+
   if state.shapes then
     local title = '‹ ' .. state.shapes.layer_id
-    lines = {
-      string.format(' %-' .. (state.width - 12) .. 's [r]efresh', title),
-      ' ' .. string.rep('─', state.width - 2),
-    }
+    local header = string.format(' %-' .. (state.width - 12) .. 's [r]efresh', title)
+    push(header)
+    local hint_start = #header - 10
+    add_hl(0, 1, hint_start, 'MapvasTitle')
+    add_hl(0, hint_start, #header, 'MapvasHint')
+
+    push(' ' .. string.rep('─', state.width - 2))
+    add_hl(1, 0, -1, 'MapvasSeparator')
+
     if #state.shapes.items == 0 then
-      lines[#lines + 1] = '  (no shapes)'
+      push('  (no shapes)')
+      add_hl(#lines - 1, 0, -1, 'MapvasEmpty')
     else
       for _, shape in ipairs(state.shapes.items) do
-        lines[#lines + 1] = shape_line(shape)
+        local line = shape_line(shape)
+        push(line)
+        local row = #lines - 1
+        -- Format: " [x] [Type] label"  or  " [ ] [Type] label"
+        local check_group = shape.visible and 'MapvasCheckOn' or 'MapvasCheckOff'
+        add_hl(row, 1, 4, check_group)
+        -- find the shape type bracket
+        local type_start = line:find('%[', 5)
+        if type_start then
+          local type_end = line:find('%]', type_start)
+          add_hl(row, type_start - 1, type_end, 'MapvasShapeType')
+          local label_group = shape.visible and 'MapvasLabel' or 'MapvasLabelOff'
+          add_hl(row, type_end + 1, -1, label_group)
+        end
       end
     end
   else
-    lines = {
-      string.format(' %-' .. (state.width - 12) .. 's [r]efresh', 'Layers'),
-      ' ' .. string.rep('─', state.width - 2),
-    }
+    local header = string.format(' %-' .. (state.width - 12) .. 's [r]efresh', 'Layers')
+    push(header)
+    local hint_start = #header - 10
+    add_hl(0, 1, hint_start, 'MapvasTitle')
+    add_hl(0, hint_start, #header, 'MapvasHint')
+
+    push(' ' .. string.rep('─', state.width - 2))
+    add_hl(1, 0, -1, 'MapvasSeparator')
+
     if #state.layers == 0 then
-      lines[#lines + 1] = '  (no layers)'
+      push('  (no layers)')
+      add_hl(#lines - 1, 0, -1, 'MapvasEmpty')
     else
       for _, layer in ipairs(state.layers) do
-        lines[#lines + 1] = layer_line(layer)
+        local line = layer_line(layer)
+        push(line)
+        local row = #lines - 1
+        -- Format: " [x] id_padded  (count) ›"
+        local check_group = layer.visible and 'MapvasCheckOn' or 'MapvasCheckOff'
+        add_hl(row, 1, 4, check_group)
+        -- Find count in parens from the end
+        local count_start = line:find('%(')
+        local count_end = line:find('%)')
+        if count_start and count_end then
+          local id_group = layer.visible and 'MapvasLayerId' or 'MapvasLayerIdOff'
+          add_hl(row, 5, count_start - 1, id_group)
+          add_hl(row, count_start - 1, count_end, 'MapvasCount')
+          add_hl(row, count_end, -1, 'MapvasArrow')
+        end
       end
     end
   end
@@ -71,6 +138,11 @@ local function render()
   vim.bo[state.buf].modifiable = true
   vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, lines)
   vim.bo[state.buf].modifiable = false
+
+  vim.api.nvim_buf_clear_namespace(state.buf, ns, 0, -1)
+  for _, hl in ipairs(highlights) do
+    vim.api.nvim_buf_add_highlight(state.buf, ns, hl[4], hl[1], hl[2], hl[3])
+  end
 end
 
 -- fetch -----------------------------------------------------------------------
@@ -253,6 +325,11 @@ end
 function M.open()
   if is_open() then return end
 
+  setup_highlights()
+  vim.api.nvim_create_autocmd('ColorScheme', {
+    group = vim.api.nvim_create_augroup('MapvasSidebar', { clear = true }),
+    callback = setup_highlights,
+  })
   state.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[state.buf].buftype = 'nofile'
   vim.bo[state.buf].bufhidden = 'wipe'
